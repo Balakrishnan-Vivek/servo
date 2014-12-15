@@ -5,8 +5,8 @@
 //! Element nodes.
 
 use dom::activation::Activatable;
-use dom::attr::{Attr, ReplacedAttr, FirstSetAttr, AttrHelpers, AttrHelpersForLayout};
-use dom::attr::{AttrValue, StringAttrValue, UIntAttrValue, AtomAttrValue};
+use dom::attr::{Attr, AttrSettingType, AttrHelpers, AttrHelpersForLayout};
+use dom::attr::AttrValue;
 use dom::namednodemap::NamedNodeMap;
 use dom::bindings::cell::DOMRefCell;
 use dom::bindings::codegen::Bindings::AttrBinding::AttrMethods;
@@ -17,28 +17,30 @@ use dom::bindings::codegen::Bindings::HTMLInputElementBinding::HTMLInputElementM
 use dom::bindings::codegen::Bindings::NamedNodeMapBinding::NamedNodeMapMethods;
 use dom::bindings::codegen::InheritTypes::{ElementDerived, HTMLInputElementDerived, HTMLTableCellElementDerived};
 use dom::bindings::codegen::InheritTypes::{HTMLInputElementCast, NodeCast, EventTargetCast, ElementCast};
+use dom::bindings::error::{ErrorResult, Fallible};
+use dom::bindings::error::Error::{NamespaceError, InvalidCharacter, Syntax};
 use dom::bindings::js::{MutNullableJS, JS, JSRef, Temporary, TemporaryPushable};
 use dom::bindings::js::{OptionalRootable, Root};
 use dom::bindings::utils::{Reflectable, Reflector};
-use dom::bindings::error::{ErrorResult, Fallible, NamespaceError, InvalidCharacter, Syntax};
-use dom::bindings::utils::{QName, Name, InvalidXMLName, xml_name_type};
+use dom::bindings::utils::xml_name_type;
+use dom::bindings::utils::XMLName::{QName, Name, InvalidXMLName};
 use dom::create::create_element;
 use dom::domrect::DOMRect;
 use dom::domrectlist::DOMRectList;
 use dom::document::{Document, DocumentHelpers, LayoutDocumentHelpers};
 use dom::domtokenlist::DOMTokenList;
 use dom::event::Event;
-use dom::eventtarget::{EventTarget, NodeTargetTypeId, EventTargetHelpers};
+use dom::eventtarget::{EventTarget, EventTargetTypeId, EventTargetHelpers};
 use dom::htmlcollection::HTMLCollection;
 use dom::htmlinputelement::{HTMLInputElement, RawLayoutHTMLInputElementHelpers};
 use dom::htmlserializer::serialize;
 use dom::htmltablecellelement::{HTMLTableCellElement, HTMLTableCellElementHelpers};
-use dom::node::{ElementNodeTypeId, Node, NodeHelpers, NodeIterator, document_from_node, CLICK_IN_PROGRESS};
+use dom::node::{NodeTypeId, Node, NodeHelpers, NodeIterator, document_from_node, CLICK_IN_PROGRESS};
 use dom::node::{window_from_node, LayoutNodeHelpers};
 use dom::nodelist::NodeList;
 use dom::virtualmethods::{VirtualMethods, vtable_for};
 use devtools_traits::AttrInfo;
-use style::{IntegerAttribute, LengthAttribute, SizeIntegerAttribute, WidthLengthAttribute};
+use style::{IntegerAttribute, LengthAttribute};
 use style::{matches, parse_selector_list_from_str};
 use style;
 use servo_util::namespace;
@@ -67,7 +69,7 @@ impl ElementDerived for EventTarget {
     #[inline]
     fn is_element(&self) -> bool {
         match *self.type_id() {
-            NodeTargetTypeId(ElementNodeTypeId(_)) => true,
+            EventTargetTypeId::Node(NodeTypeId::Element(_)) => true,
             _ => false
         }
     }
@@ -82,75 +84,75 @@ impl Reflectable for Element {
 #[deriving(PartialEq, Show)]
 #[jstraceable]
 pub enum ElementTypeId {
-    HTMLElementTypeId,
-    HTMLAnchorElementTypeId,
-    HTMLAppletElementTypeId,
-    HTMLAreaElementTypeId,
-    HTMLAudioElementTypeId,
-    HTMLBaseElementTypeId,
-    HTMLBRElementTypeId,
-    HTMLBodyElementTypeId,
-    HTMLButtonElementTypeId,
-    HTMLCanvasElementTypeId,
-    HTMLDataElementTypeId,
-    HTMLDataListElementTypeId,
-    HTMLDirectoryElementTypeId,
-    HTMLDListElementTypeId,
-    HTMLDivElementTypeId,
-    HTMLEmbedElementTypeId,
-    HTMLFieldSetElementTypeId,
-    HTMLFontElementTypeId,
-    HTMLFormElementTypeId,
-    HTMLFrameElementTypeId,
-    HTMLFrameSetElementTypeId,
-    HTMLHRElementTypeId,
-    HTMLHeadElementTypeId,
-    HTMLHeadingElementTypeId,
-    HTMLHtmlElementTypeId,
-    HTMLIFrameElementTypeId,
-    HTMLImageElementTypeId,
-    HTMLInputElementTypeId,
-    HTMLLabelElementTypeId,
-    HTMLLegendElementTypeId,
-    HTMLLinkElementTypeId,
-    HTMLLIElementTypeId,
-    HTMLMapElementTypeId,
-    HTMLMediaElementTypeId,
-    HTMLMetaElementTypeId,
-    HTMLMeterElementTypeId,
-    HTMLModElementTypeId,
-    HTMLObjectElementTypeId,
-    HTMLOListElementTypeId,
-    HTMLOptGroupElementTypeId,
-    HTMLOptionElementTypeId,
-    HTMLOutputElementTypeId,
-    HTMLParagraphElementTypeId,
-    HTMLParamElementTypeId,
-    HTMLPreElementTypeId,
-    HTMLProgressElementTypeId,
-    HTMLQuoteElementTypeId,
-    HTMLScriptElementTypeId,
-    HTMLSelectElementTypeId,
-    HTMLSourceElementTypeId,
-    HTMLSpanElementTypeId,
-    HTMLStyleElementTypeId,
-    HTMLTableElementTypeId,
-    HTMLTableCaptionElementTypeId,
-    HTMLTableDataCellElementTypeId,
-    HTMLTableHeaderCellElementTypeId,
-    HTMLTableColElementTypeId,
-    HTMLTableRowElementTypeId,
-    HTMLTableSectionElementTypeId,
-    HTMLTemplateElementTypeId,
-    HTMLTextAreaElementTypeId,
-    HTMLTimeElementTypeId,
-    HTMLTitleElementTypeId,
-    HTMLTrackElementTypeId,
-    HTMLUListElementTypeId,
-    HTMLVideoElementTypeId,
-    HTMLUnknownElementTypeId,
+    HTMLElement,
+    HTMLAnchorElement,
+    HTMLAppletElement,
+    HTMLAreaElement,
+    HTMLAudioElement,
+    HTMLBaseElement,
+    HTMLBRElement,
+    HTMLBodyElement,
+    HTMLButtonElement,
+    HTMLCanvasElement,
+    HTMLDataElement,
+    HTMLDataListElement,
+    HTMLDirectoryElement,
+    HTMLDListElement,
+    HTMLDivElement,
+    HTMLEmbedElement,
+    HTMLFieldSetElement,
+    HTMLFontElement,
+    HTMLFormElement,
+    HTMLFrameElement,
+    HTMLFrameSetElement,
+    HTMLHRElement,
+    HTMLHeadElement,
+    HTMLHeadingElement,
+    HTMLHtmlElement,
+    HTMLIFrameElement,
+    HTMLImageElement,
+    HTMLInputElement,
+    HTMLLabelElement,
+    HTMLLegendElement,
+    HTMLLinkElement,
+    HTMLLIElement,
+    HTMLMapElement,
+    HTMLMediaElement,
+    HTMLMetaElement,
+    HTMLMeterElement,
+    HTMLModElement,
+    HTMLObjectElement,
+    HTMLOListElement,
+    HTMLOptGroupElement,
+    HTMLOptionElement,
+    HTMLOutputElement,
+    HTMLParagraphElement,
+    HTMLParamElement,
+    HTMLPreElement,
+    HTMLProgressElement,
+    HTMLQuoteElement,
+    HTMLScriptElement,
+    HTMLSelectElement,
+    HTMLSourceElement,
+    HTMLSpanElement,
+    HTMLStyleElement,
+    HTMLTableElement,
+    HTMLTableCaptionElement,
+    HTMLTableDataCellElement,
+    HTMLTableHeaderCellElement,
+    HTMLTableColElement,
+    HTMLTableRowElement,
+    HTMLTableSectionElement,
+    HTMLTemplateElement,
+    HTMLTextAreaElement,
+    HTMLTimeElement,
+    HTMLTitleElement,
+    HTMLTrackElement,
+    HTMLUListElement,
+    HTMLVideoElement,
+    HTMLUnknownElement,
 
-    ElementTypeId_,
+    Element,
 }
 
 #[deriving(PartialEq)]
@@ -171,7 +173,7 @@ impl Element {
 
     pub fn new_inherited(type_id: ElementTypeId, local_name: DOMString, namespace: Namespace, prefix: Option<DOMString>, document: JSRef<Document>) -> Element {
         Element {
-            node: Node::new_inherited(ElementNodeTypeId(type_id), document),
+            node: Node::new_inherited(NodeTypeId::Element(type_id), document),
             local_name: Atom::from_slice(local_name.as_slice()),
             namespace: namespace,
             prefix: prefix,
@@ -183,7 +185,7 @@ impl Element {
     }
 
     pub fn new(local_name: DOMString, namespace: Namespace, prefix: Option<DOMString>, document: JSRef<Document>) -> Temporary<Element> {
-        Node::reflect_node(box Element::new_inherited(ElementTypeId_, local_name, namespace, prefix, document),
+        Node::reflect_node(box Element::new_inherited(ElementTypeId::Element, local_name, namespace, prefix, document),
                            document, ElementBinding::Wrap)
     }
 }
@@ -283,7 +285,7 @@ impl RawLayoutElementHelpers for Element {
     unsafe fn get_length_attribute_for_layout(&self, length_attribute: LengthAttribute)
                                               -> LengthOrPercentageOrAuto {
         match length_attribute {
-            WidthLengthAttribute => {
+            LengthAttribute::Width => {
                 if !self.is_htmltablecellelement() {
                     panic!("I'm not a table cell!")
                 }
@@ -297,7 +299,7 @@ impl RawLayoutElementHelpers for Element {
     unsafe fn get_integer_attribute_for_layout(&self, integer_attribute: IntegerAttribute)
                                                -> Option<i32> {
         match integer_attribute {
-            SizeIntegerAttribute => {
+            IntegerAttribute::Size => {
                 if !self.is_htmlinputelement() {
                     panic!("I'm not a form input!")
                 }
@@ -514,13 +516,13 @@ impl<'a> AttributeHandlers for JSRef<'a, Element> {
                                      .map(|attr| attr.root())
                                      .position(|attr| cb(*attr));
         let (idx, set_type) = match idx {
-            Some(idx) => (idx, ReplacedAttr),
+            Some(idx) => (idx, AttrSettingType::ReplacedAttr),
             None => {
                 let window = window_from_node(self).root();
                 let attr = Attr::new(*window, local_name, value.clone(),
                                      name, namespace.clone(), prefix, Some(self));
                 self.attrs.borrow_mut().push_unrooted(&attr);
-                (self.attrs.borrow().len() - 1, FirstSetAttr)
+                (self.attrs.borrow().len() - 1, AttrSettingType::FirstSetAttr)
             }
         };
 
@@ -533,7 +535,7 @@ impl<'a> AttributeHandlers for JSRef<'a, Element> {
             vtable_for(&NodeCast::from_ref(self))
                 .parse_plain_attribute(local_name, value)
         } else {
-            StringAttrValue(value)
+            AttrValue::String(value)
         }
     }
 
@@ -629,7 +631,7 @@ impl<'a> AttributeHandlers for JSRef<'a, Element> {
     }
     fn set_string_attribute(self, name: &Atom, value: DOMString) {
         assert!(name.as_slice() == name.as_slice().to_ascii_lower().as_slice());
-        self.set_attribute(name, StringAttrValue(value));
+        self.set_attribute(name, AttrValue::String(value));
     }
 
     fn set_tokenlist_attribute(self, name: &Atom, value: DOMString) {
@@ -645,8 +647,8 @@ impl<'a> AttributeHandlers for JSRef<'a, Element> {
         match attribute {
             Some(attribute) => {
                 match *attribute.value() {
-                    UIntAttrValue(_, value) => value,
-                    _ => panic!("Expected a UIntAttrValue: \
+                    AttrValue::UInt(_, value) => value,
+                    _ => panic!("Expected an AttrValue::UInt: \
                                  implement parse_plain_attribute"),
                 }
             }
@@ -655,7 +657,7 @@ impl<'a> AttributeHandlers for JSRef<'a, Element> {
     }
     fn set_uint_attribute(self, name: &Atom, value: u32) {
         assert!(name.as_slice() == name.as_slice().to_ascii_lower().as_slice());
-        self.set_attribute(name, UIntAttrValue(value.to_string(), value));
+        self.set_attribute(name, AttrValue::UInt(value.to_string(), value));
     }
 }
 
@@ -1115,9 +1117,9 @@ impl<'a> style::TElement<'a> for JSRef<'a, Element> {
         match node.type_id() {
             // http://www.whatwg.org/specs/web-apps/current-work/multipage/selectors.html#
             // selector-link
-            ElementNodeTypeId(HTMLAnchorElementTypeId) |
-            ElementNodeTypeId(HTMLAreaElementTypeId) |
-            ElementNodeTypeId(HTMLLinkElementTypeId) => self.get_attr(&ns!(""), &atom!("href")),
+            NodeTypeId::Element(ElementTypeId::HTMLAnchorElement) |
+            NodeTypeId::Element(ElementTypeId::HTMLAreaElement) |
+            NodeTypeId::Element(ElementTypeId::HTMLLinkElement) => self.get_attr(&ns!(""), &atom!("href")),
             _ => None,
          }
     }
@@ -1147,8 +1149,8 @@ impl<'a> style::TElement<'a> for JSRef<'a, Element> {
         self.get_attribute(ns!(""), &atom!("id")).map(|attr| {
             let attr = attr.root();
             match *attr.value() {
-                AtomAttrValue(ref val) => val.clone(),
-                _ => panic!("`id` attribute should be AtomAttrValue"),
+                AttrValue::Atom(ref val) => val.clone(),
+                _ => panic!("`id` attribute should be AttrValue::Atom"),
             }
         })
     }
@@ -1204,7 +1206,7 @@ impl<'a> ActivationElementHelpers<'a> for JSRef<'a, Element> {
     fn as_maybe_activatable(&'a self) -> Option<&'a Activatable + 'a> {
         let node: JSRef<Node> = NodeCast::from_ref(*self);
         match node.type_id() {
-            ElementNodeTypeId(HTMLInputElementTypeId) => {
+            NodeTypeId::Element(ElementTypeId::HTMLInputElement) => {
                 let element: &'a JSRef<'a, HTMLInputElement> = HTMLInputElementCast::to_borrowed_ref(self).unwrap();
                 Some(element as &'a Activatable + 'a)
             },

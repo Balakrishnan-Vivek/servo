@@ -5,14 +5,15 @@
 use dom::bindings::codegen::Bindings::DocumentBinding::DocumentReadyStateValues;
 use dom::bindings::codegen::Bindings::DOMParserBinding;
 use dom::bindings::codegen::Bindings::DOMParserBinding::DOMParserMethods;
-use dom::bindings::codegen::Bindings::DOMParserBinding::SupportedTypeValues::{Text_html, Text_xml};
-use dom::bindings::error::{Fallible, FailureUnknown};
+use dom::bindings::codegen::Bindings::DOMParserBinding::SupportedType::{Text_html, Text_xml};
+use dom::bindings::error::Fallible;
+use dom::bindings::error::Error::FailureUnknown;
 use dom::bindings::global::GlobalRef;
 use dom::bindings::global;
 use dom::bindings::js::{JS, JSRef, Temporary};
 use dom::bindings::utils::{Reflector, Reflectable, reflect_dom_object};
-use dom::document::{Document, DocumentHelpers, HTMLDocument, NonHTMLDocument};
-use dom::document::{FromParser, NotFromParser};
+use dom::document::{Document, DocumentHelpers, IsHTMLDocument};
+use dom::document::DocumentSource;
 use dom::servohtmlparser::ServoHTMLParser;
 use dom::window::Window;
 use parse::Parser;
@@ -53,8 +54,10 @@ impl<'a> DOMParserMethods for JSRef<'a, DOMParser> {
         let content_type = DOMParserBinding::SupportedTypeValues::strings[ty as uint].to_string();
         match ty {
             Text_html => {
-                let document = Document::new(window, url.clone(), HTMLDocument,
-                                             Some(content_type), FromParser).root().clone();
+                let document = Document::new(window, url.clone(),
+                                             IsHTMLDocument::HTMLDocument,
+                                             Some(content_type),
+                                             DocumentSource::FromParser).root().clone();
                 let parser = ServoHTMLParser::new(url.clone(), document).root().clone();
                 parser.parse_chunk(s);
                 parser.finish();
@@ -63,8 +66,10 @@ impl<'a> DOMParserMethods for JSRef<'a, DOMParser> {
             }
             Text_xml => {
                 //FIXME: this should probably be FromParser when we actually parse the string (#3756).
-                Ok(Document::new(window, url.clone(), NonHTMLDocument, Some(content_type),
-                                 NotFromParser))
+                Ok(Document::new(window, url.clone(),
+                                 IsHTMLDocument::NonHTMLDocument,
+                                 Some(content_type),
+                                 DocumentSource::NotFromParser))
             }
             _ => {
                 Err(FailureUnknown)

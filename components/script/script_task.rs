@@ -5,30 +5,32 @@
 //! The script task is the task that owns the DOM in memory, runs JavaScript, and spawns parsing
 //! and layout tasks.
 
+use self::ScriptMsg::*;
+
 use dom::bindings::cell::DOMRefCell;
-use dom::bindings::codegen::Bindings::DocumentBinding::{DocumentMethods, DocumentReadyStateValues};
+use dom::bindings::codegen::Bindings::DocumentBinding::{DocumentMethods, DocumentReadyState};
 use dom::bindings::codegen::Bindings::EventBinding::EventMethods;
 use dom::bindings::codegen::Bindings::EventTargetBinding::EventTargetMethods;
 use dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use dom::bindings::codegen::InheritTypes::{ElementCast, EventTargetCast, NodeCast, EventCast};
-use dom::bindings::conversions::{FromJSValConvertible, Empty};
+use dom::bindings::conversions::FromJSValConvertible;
+use dom::bindings::conversions::StringificationBehavior;
 use dom::bindings::global;
 use dom::bindings::js::{JS, JSRef, RootCollection, Temporary, OptionalRootable};
 use dom::bindings::trace::JSTraceable;
 use dom::bindings::utils::{wrap_for_same_compartment, pre_wrap};
-use dom::document::{Document, HTMLDocument, DocumentHelpers, FromParser};
-use dom::element::{Element, HTMLButtonElementTypeId, HTMLInputElementTypeId};
-use dom::element::{HTMLSelectElementTypeId, HTMLTextAreaElementTypeId, HTMLOptionElementTypeId, ActivationElementHelpers};
-use dom::event::{Event, EventHelpers, Bubbles, DoesNotBubble, Cancelable, NotCancelable};
+use dom::document::{Document, IsHTMLDocument, DocumentHelpers, DocumentSource};
+use dom::element::{Element, ElementTypeId, ActivationElementHelpers};
+use dom::event::{Event, EventHelpers, EventBubbles, EventCancelable};
 use dom::uievent::UIEvent;
 use dom::eventtarget::{EventTarget, EventTargetHelpers};
 use dom::keyboardevent::KeyboardEvent;
 use dom::node;
-use dom::node::{ElementNodeTypeId, Node, NodeHelpers};
+use dom::node::{NodeTypeId, Node, NodeHelpers};
 use dom::window::{Window, WindowHelpers};
 use dom::worker::{Worker, TrustedWorkerAddress};
 use dom::xmlhttprequest::{TrustedXHRAddress, XMLHttpRequest, XHRProgress};
-use parse::html::{InputString, InputUrl, parse_html};
+use parse::html::{HTMLInput, parse_html};
 use layout_interface::{ScriptLayoutChan, LayoutChan, NoQuery, ReflowForDisplay};
 use layout_interface;
 use page::{Page, IterablePage, Frame};
@@ -238,12 +240,12 @@ trait PrivateScriptTaskHelpers {
 impl<'a> PrivateScriptTaskHelpers for JSRef<'a, Node> {
     fn click_event_filter_by_disabled_state(&self) -> bool {
         match self.type_id() {
-            ElementNodeTypeId(HTMLButtonElementTypeId) |
-            ElementNodeTypeId(HTMLInputElementTypeId) |
-            // ElementNodeTypeId(HTMLKeygenElementTypeId) |
-            ElementNodeTypeId(HTMLOptionElementTypeId) |
-            ElementNodeTypeId(HTMLSelectElementTypeId) |
-            ElementNodeTypeId(HTMLTextAreaElementTypeId) if self.get_disabled_state() => true,
+            NodeTypeId::Element(ElementTypeId::HTMLButtonElement) |
+            NodeTypeId::Element(ElementTypeId::HTMLInputElement) |
+            // NodeTypeId::Element(ElementTypeId::HTMLKeygenElement) |
+            NodeTypeId::Element(ElementTypeId::HTMLOptionElement) |
+            NodeTypeId::Element(ElementTypeId::HTMLSelectElement) |
+            NodeTypeId::Element(ElementTypeId::HTMLTextAreaElement) if self.get_disabled_state() => true,
             _ => false
         }
     }
@@ -470,11 +472,11 @@ impl ScriptTask {
             }
             let ret = sel.wait();
             if ret == port1.id() {
-                FromScript(self.port.recv())
+                MixedMessage::FromScript(self.port.recv())
             } else if ret == port2.id() {
-                FromConstellation(self.control_port.recv())
+                MixedMessage::FromConstellation(self.control_port.recv())
             } else if ret == port3.id() {
-                FromDevtools(self.devtools_port.recv())
+                MixedMessage::FromDevtools(self.devtools_port.recv())
             } else {
                 panic!("unexpected select result")
             }
@@ -488,22 +490,22 @@ impl ScriptTask {
                 // This has to be handled before the ResizeMsg below,
                 // otherwise the page may not have been added to the
                 // child list yet, causing the find() to fail.
-                FromConstellation(AttachLayoutMsg(new_layout_info)) => {
+                MixedMessage::FromConstellation(AttachLayoutMsg(new_layout_info)) => {
                     self.handle_new_layout(new_layout_info);
                 }
-                FromConstellation(ResizeMsg(id, size)) => {
+                MixedMessage::FromConstellation(ResizeMsg(id, size)) => {
                     let page = self.page.borrow_mut();
                     let page = page.find(id).expect("resize sent to nonexistent pipeline");
                     page.resize_event.set(Some(size));
                 }
-                FromConstellation(SendEventMsg(id, ReflowEvent(node_addresses))) => {
+                MixedMessage::FromConstellation(SendEventMsg(id, ReflowEvent(node_addresses))) => {
                     let page = self.page.borrow_mut();
                     let inner_page = page.find(id).expect("Reflow sent to nonexistent pipeline");
                     let mut pending = inner_page.pending_dirty_nodes.borrow_mut();
                     pending.push_all_move(node_addresses);
                     needs_reflow.insert(id);
                 }
-                FromConstellation(ViewportMsg(id, rect)) => {
+                MixedMessage::FromConstellation(ViewportMsg(id, rect)) => {
                     let page = self.page.borrow_mut();
                     let inner_page = page.find(id).expect("Page rect message sent to nonexistent pipeline");
                     if inner_page.set_page_clip_rect_with_new_viewport(rect) {
@@ -522,22 +524,22 @@ impl ScriptTask {
                 Err(_) => match self.port.try_recv() {
                     Err(_) => match self.devtools_port.try_recv() {
                         Err(_) => break,
-                        Ok(ev) => event = FromDevtools(ev),
+                        Ok(ev) => event = MixedMessage::FromDevtools(ev),
                     },
-                    Ok(ev) => event = FromScript(ev),
+                    Ok(ev) => event = MixedMessage::FromScript(ev),
                 },
-                Ok(ev) => event = FromConstellation(ev),
+                Ok(ev) => event = MixedMessage::FromConstellation(ev),
             }
         }
 
         // Process the gathered events.
         for msg in sequential.into_iter() {
             match msg {
-                FromConstellation(ExitPipelineMsg(id)) =>
+                MixedMessage::FromConstellation(ExitPipelineMsg(id)) =>
                     if self.handle_exit_pipeline_msg(id) { return false },
-                FromConstellation(inner_msg) => self.handle_msg_from_constellation(inner_msg),
-                FromScript(inner_msg) => self.handle_msg_from_script(inner_msg),
-                FromDevtools(inner_msg) => self.handle_msg_from_devtools(inner_msg),
+                MixedMessage::FromConstellation(inner_msg) => self.handle_msg_from_constellation(inner_msg),
+                MixedMessage::FromScript(inner_msg) => self.handle_msg_from_script(inner_msg),
+                MixedMessage::FromDevtools(inner_msg) => self.handle_msg_from_devtools(inner_msg),
             }
         }
 
@@ -579,7 +581,7 @@ impl ScriptTask {
                 self.trigger_load(id, load_data),
             TriggerFragmentMsg(id, url) =>
                 self.trigger_fragment(id, url),
-            FireTimerMsg(FromWindow(id), timer_id) =>
+            FireTimerMsg(TimerSource::FromWindow(id), timer_id) =>
                 self.handle_fire_timer_msg(id, timer_id),
             FireTimerMsg(FromWorker, _) =>
                 panic!("Worker timeouts must not be sent to script task"),
@@ -778,8 +780,9 @@ impl ScriptTask {
         } else {
             url.clone()
         };
-        let document = Document::new(*window, Some(doc_url.clone()), HTMLDocument,
-                                     None, FromParser).root();
+        let document = Document::new(*window, Some(doc_url.clone()),
+                                     IsHTMLDocument::HTMLDocument, None,
+                                     DocumentSource::FromParser).root();
 
         window.init_browser_context(*document);
 
@@ -823,17 +826,18 @@ impl ScriptTask {
                 *page.mut_url() = Some((final_url.clone(), true));
             }
 
-            (InputUrl(load_response), final_url)
+            (HTMLInput::InputUrl(load_response), final_url)
         } else {
             let evalstr = load_data.url.non_relative_scheme_data().unwrap();
             let jsval = window.evaluate_js_with_result(evalstr);
-            let strval = FromJSValConvertible::from_jsval(self.get_cx(), jsval, Empty);
-            (InputString(strval.unwrap_or("".to_string())), doc_url)
+            let strval = FromJSValConvertible::from_jsval(self.get_cx(), jsval,
+                                                          StringificationBehavior::Empty);
+            (HTMLInput::InputString(strval.unwrap_or("".to_string())), doc_url)
         };
 
         parse_html(*document, parser_input, &final_url);
 
-        document.set_ready_state(DocumentReadyStateValues::Interactive);
+        document.set_ready_state(DocumentReadyState::Interactive);
         self.compositor.borrow_mut().set_ready_state(pipeline_id, PerformingLayout);
 
         // Kick off the initial reflow of the page.
@@ -849,7 +853,8 @@ impl ScriptTask {
 
         // https://html.spec.whatwg.org/multipage/#the-end step 4
         let event = Event::new(global::Window(*window), "DOMContentLoaded".to_string(),
-                               DoesNotBubble, NotCancelable).root();
+                               EventBubbles::DoesNotBubble,
+                               EventCancelable::NotCancelable).root();
         let doctarget: JSRef<EventTarget> = EventTargetCast::from_ref(*document);
         let _ = doctarget.DispatchEvent(*event);
 
@@ -858,9 +863,11 @@ impl ScriptTask {
         // the initial load.
 
         // https://html.spec.whatwg.org/multipage/#the-end step 7
-        document.set_ready_state(DocumentReadyStateValues::Complete);
+        document.set_ready_state(DocumentReadyState::Complete);
 
-        let event = Event::new(global::Window(*window), "load".to_string(), DoesNotBubble, NotCancelable).root();
+        let event = Event::new(global::Window(*window), "load".to_string(),
+                               EventBubbles::DoesNotBubble,
+                               EventCancelable::NotCancelable).root();
         let wintarget: JSRef<EventTarget> = EventTargetCast::from_ref(*window);
         let _ = wintarget.dispatch_event_with_target(Some(doctarget), *event);
 
@@ -1130,7 +1137,8 @@ impl ScriptTask {
                                 let event =
                                     Event::new(global::Window(*window),
                                                "click".to_string(),
-                                               Bubbles, Cancelable).root();
+                                               EventBubbles::Bubbles,
+                                               EventCancelable::Cancelable).root();
                                 // https://dvcs.w3.org/hg/dom3events/raw-file/tip/html/DOM3-Events.html#trusted-events
                                 event.set_trusted(true);
                                 // https://html.spec.whatwg.org/multipage/interaction.html#run-authentic-click-activation-steps

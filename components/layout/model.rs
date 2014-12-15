@@ -10,7 +10,7 @@ use fragment::Fragment;
 
 use style::computed_values as computed;
 use geom::SideOffsets2D;
-use style::computed_values::{LPA_Auto, LPA_Length, LPA_Percentage, LP_Length, LP_Percentage};
+use style::computed_values::{LengthOrPercentageOrAuto, LengthOrPercentage};
 use style::ComputedValues;
 use servo_util::geometry::Au;
 use servo_util::logical_geometry::LogicalMargin;
@@ -117,9 +117,9 @@ impl MarginCollapseInfo {
         let state = match self.state {
             AccumulatingCollapsibleTopMargin => {
                 match fragment.style().content_block_size() {
-                    LPA_Auto | LPA_Length(Au(0)) | LPA_Percentage(0.) => {
+                    LengthOrPercentageOrAuto::Auto | LengthOrPercentageOrAuto::Length(Au(0)) | LengthOrPercentageOrAuto::Percentage(0.) => {
                         match fragment.style().min_block_size() {
-                            LP_Length(Au(0)) | LP_Percentage(0.) => {
+                            LengthOrPercentage::Length(Au(0)) | LengthOrPercentage::Percentage(0.) => {
                                 MarginsCollapseThroughFinalMarginState
                             },
                             _ => {
@@ -333,11 +333,11 @@ impl MaybeAuto {
     pub fn from_style(length: computed::LengthOrPercentageOrAuto, containing_length: Au)
                       -> MaybeAuto {
         match length {
-            computed::LPA_Auto => Auto,
-            computed::LPA_Percentage(percent) => {
+            computed::LengthOrPercentageOrAuto::Auto => Auto,
+            computed::LengthOrPercentageOrAuto::Percentage(percent) => {
                 Specified(containing_length.scale_by(percent))
             }
-            computed::LPA_Length(length) => Specified(length)
+            computed::LengthOrPercentageOrAuto::Length(length) => Specified(length)
         }
     }
 
@@ -365,16 +365,16 @@ impl MaybeAuto {
 
 pub fn specified_or_none(length: computed::LengthOrPercentageOrNone, containing_length: Au) -> Option<Au> {
     match length {
-        computed::LPN_None => None,
-        computed::LPN_Percentage(percent) => Some(containing_length.scale_by(percent)),
-        computed::LPN_Length(length) => Some(length),
+        computed::LengthOrPercentageOrNone::None => None,
+        computed::LengthOrPercentageOrNone::Percentage(percent) => Some(containing_length.scale_by(percent)),
+        computed::LengthOrPercentageOrNone::Length(length) => Some(length),
     }
 }
 
 pub fn specified(length: computed::LengthOrPercentage, containing_length: Au) -> Au {
     match length {
-        computed::LP_Length(length) => length,
-        computed::LP_Percentage(p) => containing_length.scale_by(p)
+        computed::LengthOrPercentage::Length(length) => length,
+        computed::LengthOrPercentage::Percentage(p) => containing_length.scale_by(p)
     }
 }
 

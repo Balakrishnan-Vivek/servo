@@ -4,6 +4,9 @@
 
 //! Painting of display lists using Moz2D/Azure.
 
+use self::DashSize::*;
+use self::Direction::*;
+
 use azure::azure::AzIntSize;
 use azure::azure_hl::{B8G8R8A8, A8, Color, ColorPattern, ColorPatternRef, DrawOptions};
 use azure::azure_hl::{DrawSurfaceOptions, DrawTarget, ExtendClamp, GradientStop, Linear};
@@ -11,7 +14,8 @@ use azure::azure_hl::{LinearGradientPattern, LinearGradientPatternRef, SourceOp,
 use azure::scaled_font::ScaledFont;
 use azure::{AZ_CAP_BUTT, AzFloat, struct__AzDrawOptions, struct__AzGlyph};
 use azure::{struct__AzGlyphBuffer, struct__AzPoint, AzDrawTargetFillGlyphs};
-use display_list::{SidewaysLeft, SidewaysRight, TextDisplayItem, Upright, BorderRadii};
+use display_list::{TextDisplayItem, BorderRadii};
+use display_list::TextOrientation::{SidewaysLeft, SidewaysRight, Upright};
 use font_context::FontContext;
 use geom::matrix2d::Matrix2D;
 use geom::point::Point2D;

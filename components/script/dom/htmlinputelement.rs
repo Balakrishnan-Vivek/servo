@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use dom::activation::Activatable;
-use dom::attr::{Attr, AttrValue, UIntAttrValue};
+use dom::attr::{Attr, AttrValue};
 use dom::attr::AttrHelpers;
 use dom::bindings::cell::DOMRefCell;
 use dom::bindings::codegen::Bindings::AttrBinding::AttrMethods;
@@ -20,16 +20,18 @@ use dom::bindings::js::{Comparable, JS, JSRef, Root, Temporary, OptionalRootable
 use dom::bindings::js::{ResultRootable, RootedReference, MutNullableJS};
 use dom::bindings::utils::{Reflectable, Reflector};
 use dom::document::{Document, DocumentHelpers};
-use dom::element::{AttributeHandlers, Element, HTMLInputElementTypeId};
+use dom::element::{AttributeHandlers, Element, ElementTypeId};
 use dom::element::{RawLayoutElementHelpers, ActivationElementHelpers};
-use dom::event::{Event, Bubbles, NotCancelable, EventHelpers};
-use dom::eventtarget::{EventTarget, NodeTargetTypeId};
+use dom::event::{Event, EventBubbles, EventCancelable, EventHelpers};
+use dom::eventtarget::{EventTarget, EventTargetTypeId};
 use dom::htmlelement::HTMLElement;
 use dom::keyboardevent::KeyboardEvent;
-use dom::htmlformelement::{InputElement, FormControl, HTMLFormElement, HTMLFormElementHelpers, NotFromFormSubmitMethod};
-use dom::node::{DisabledStateHelpers, Node, NodeHelpers, ElementNodeTypeId, document_from_node, window_from_node};
+use dom::htmlformelement::{FormSubmitter, FormControl, HTMLFormElement, HTMLFormElementHelpers, SubmittedFrom};
+use dom::node::{DisabledStateHelpers, Node, NodeHelpers, NodeTypeId, document_from_node, window_from_node};
 use dom::virtualmethods::VirtualMethods;
-use textinput::{Single, TextInput, TriggerDefaultAction, DispatchInput, Nothing};
+use textinput::TextInput;
+use textinput::KeyReaction::{TriggerDefaultAction, DispatchInput, Nothing};
+use textinput::Lines::Single;
 
 use servo_util::str::DOMString;
 use string_cache::Atom;
@@ -93,7 +95,7 @@ impl InputActivationState {
 
 impl HTMLInputElementDerived for EventTarget {
     fn is_htmlinputelement(&self) -> bool {
-        *self.type_id() == NodeTargetTypeId(ElementNodeTypeId(HTMLInputElementTypeId))
+        *self.type_id() == EventTargetTypeId::Node(NodeTypeId::Element(ElementTypeId::HTMLInputElement))
     }
 }
 
@@ -102,7 +104,7 @@ static DEFAULT_INPUT_SIZE: u32 = 20;
 impl HTMLInputElement {
     fn new_inherited(localName: DOMString, prefix: Option<DOMString>, document: JSRef<Document>) -> HTMLInputElement {
         HTMLInputElement {
-            htmlelement: HTMLElement::new_inherited(HTMLInputElementTypeId, localName, prefix, document),
+            htmlelement: HTMLElement::new_inherited(ElementTypeId::HTMLInputElement, localName, prefix, document),
             input_type: Cell::new(InputText),
             checked: Cell::new(false),
             indeterminate: Cell::new(false),
@@ -369,8 +371,8 @@ impl<'a> VirtualMethods for JSRef<'a, HTMLInputElement> {
             }
             &atom!("size") => {
                 match *attr.value() {
-                    UIntAttrValue(_, value) => self.size.set(value),
-                    _ => panic!("Expected a UIntAttrValue"),
+                    AttrValue::UInt(_, value) => self.size.set(value),
+                    _ => panic!("Expected an AttrValue::UInt"),
                 }
                 self.force_relayout();
             }
@@ -672,7 +674,8 @@ impl<'a> Activatable for JSRef<'a, HTMLInputElement> {
                 // FIXME (Manishearth): support document owners (needs ability to get parent browsing context)
                 if self.mutable() /* and document owner is fully active */ {
                     self.form_owner().map(|o| {
-                        o.root().submit(NotFromFormSubmitMethod, InputElement(self.clone()))
+                        o.root().submit(SubmittedFrom::NotFromFormSubmitMethod,
+                                        FormSubmitter::InputElement(self.clone()))
                     });
                 }
             },
@@ -683,14 +686,16 @@ impl<'a> Activatable for JSRef<'a, HTMLInputElement> {
                     let win = window_from_node(*self).root();
                     let event = Event::new(Window(*win),
                                            "input".to_string(),
-                                           Bubbles, NotCancelable).root();
+                                           EventBubbles::Bubbles,
+                                           EventCancelable::NotCancelable).root();
                     event.set_trusted(true);
                     let target: JSRef<EventTarget> = EventTargetCast::from_ref(*self);
                     target.DispatchEvent(*event).ok();
 
                     let event = Event::new(Window(*win),
                                            "change".to_string(),
-                                           Bubbles, NotCancelable).root();
+                                           EventBubbles::Bubbles,
+                                           EventCancelable::NotCancelable).root();
                     event.set_trusted(true);
                     let target: JSRef<EventTarget> = EventTargetCast::from_ref(*self);
                     target.DispatchEvent(*event).ok();

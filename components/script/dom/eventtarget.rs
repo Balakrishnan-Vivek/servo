@@ -7,14 +7,15 @@ use dom::bindings::cell::DOMRefCell;
 use dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull;
 use dom::bindings::codegen::Bindings::EventListenerBinding::EventListener;
 use dom::bindings::codegen::Bindings::EventTargetBinding::EventTargetMethods;
-use dom::bindings::error::{Fallible, InvalidState, report_pending_exception};
+use dom::bindings::error::{Fallible, report_pending_exception};
+use dom::bindings::error::Error::InvalidState;
 use dom::bindings::js::JSRef;
 use dom::bindings::utils::{Reflectable, Reflector};
 use dom::event::Event;
 use dom::eventdispatcher::dispatch_event;
 use dom::node::NodeTypeId;
-use dom::workerglobalscope::WorkerGlobalScopeId;
-use dom::xmlhttprequest::XMLHttpRequestId;
+use dom::workerglobalscope::WorkerGlobalScopeTypeId;
+use dom::xmlhttprequesteventtarget::XMLHttpRequestEventTargetTypeId;
 use dom::virtualmethods::VirtualMethods;
 use js::jsapi::{JS_CompileUCFunction, JS_GetFunctionObject, JS_CloneFunctionObject};
 use js::jsapi::{JSContext, JSObject};
@@ -37,12 +38,12 @@ pub enum ListenerPhase {
 #[deriving(PartialEq)]
 #[jstraceable]
 pub enum EventTargetTypeId {
-    NodeTargetTypeId(NodeTypeId),
-    WebSocketTypeId,
-    WindowTypeId,
-    WorkerTypeId,
-    WorkerGlobalScopeTypeId(WorkerGlobalScopeId),
-    XMLHttpRequestTargetTypeId(XMLHttpRequestId)
+    Node(NodeTypeId),
+    WebSocket,
+    Window,
+    Worker,
+    WorkerGlobalScope(WorkerGlobalScopeTypeId),
+    XMLHttpRequestEventTarget(XMLHttpRequestEventTargetTypeId)
 }
 
 #[deriving(PartialEq)]

@@ -13,17 +13,17 @@ use dom::bindings::global::Window;
 use dom::bindings::js::{JSRef, Temporary};
 use dom::bindings::utils::{Reflectable, Reflector};
 use dom::document::{Document, DocumentHelpers};
-use dom::element::{Element, AttributeHandlers, HTMLFormElementTypeId, HTMLTextAreaElementTypeId, HTMLDataListElementTypeId};
-use dom::element::{HTMLInputElementTypeId, HTMLButtonElementTypeId, HTMLObjectElementTypeId, HTMLSelectElementTypeId};
-use dom::event::{Event, EventHelpers, Bubbles, Cancelable};
-use dom::eventtarget::{EventTarget, NodeTargetTypeId};
+use dom::element::{Element, AttributeHandlers, ElementTypeId};
+use dom::event::{Event, EventHelpers, EventBubbles, EventCancelable};
+use dom::eventtarget::{EventTarget, EventTargetTypeId};
 use dom::htmlelement::HTMLElement;
 use dom::htmlinputelement::HTMLInputElement;
-use dom::node::{Node, NodeHelpers, ElementNodeTypeId, document_from_node, window_from_node};
+use dom::node::{Node, NodeHelpers, NodeTypeId, document_from_node, window_from_node};
 use hyper::method::Post;
 use servo_msg::constellation_msg::LoadData;
 use servo_util::str::DOMString;
-use script_task::{ScriptChan, TriggerLoadMsg};
+use script_task::ScriptChan;
+use script_task::ScriptMsg::TriggerLoadMsg;
 use std::ascii::OwnedAsciiExt;
 use url::UrlParser;
 use url::form_urlencoded::serialize;
@@ -36,14 +36,14 @@ pub struct HTMLFormElement {
 
 impl HTMLFormElementDerived for EventTarget {
     fn is_htmlformelement(&self) -> bool {
-        *self.type_id() == NodeTargetTypeId(ElementNodeTypeId(HTMLFormElementTypeId))
+        *self.type_id() == EventTargetTypeId::Node(NodeTypeId::Element(ElementTypeId::HTMLFormElement))
     }
 }
 
 impl HTMLFormElement {
     fn new_inherited(localName: DOMString, prefix: Option<DOMString>, document: JSRef<Document>) -> HTMLFormElement {
         HTMLFormElement {
-            htmlelement: HTMLElement::new_inherited(HTMLFormElementTypeId, localName, prefix, document)
+            htmlelement: HTMLElement::new_inherited(ElementTypeId::HTMLFormElement, localName, prefix, document)
         }
     }
 
@@ -115,7 +115,7 @@ impl<'a> HTMLFormElementMethods for JSRef<'a, HTMLFormElement> {
 
     // https://html.spec.whatwg.org/multipage/forms.html#the-form-element:concept-form-submit
     fn Submit(self) {
-        self.submit(FromFormSubmitMethod, FormElement(self));
+        self.submit(FromFormSubmitMethod, FormSubmitter::FormElement(self));
     }
 }
 
@@ -141,7 +141,8 @@ impl<'a> HTMLFormElementHelpers for JSRef<'a, HTMLFormElement> {
         // TODO: Handle validation
         let event = Event::new(Window(*win),
                                "submit".to_string(),
-                               Bubbles, Cancelable).root();
+                               EventBubbles::Bubbles,
+                               EventCancelable::Cancelable).root();
         event.set_trusted(true);
         let target: JSRef<EventTarget> = EventTargetCast::from_ref(self);
         target.DispatchEvent(*event).ok();
@@ -231,12 +232,12 @@ impl<'a> HTMLFormElementHelpers for JSRef<'a, HTMLFormElement> {
             if child.get_disabled_state() {
                 return None;
             }
-            if child.ancestors().any(|a| a.type_id() == ElementNodeTypeId(HTMLDataListElementTypeId)) {
+            if child.ancestors().any(|a| a.type_id() == NodeTypeId::Element(ElementTypeId::HTMLDataListElement)) {
                 return None;
             }
             // XXXManishearth don't include it if it is a button but not the submitter
             match child.type_id() {
-                ElementNodeTypeId(HTMLInputElementTypeId) => {
+                NodeTypeId::Element(ElementTypeId::HTMLInputElement) => {
                     let input: JSRef<HTMLInputElement> = HTMLInputElementCast::to_ref(child).unwrap();
                     let ty = input.Type();
                     let name = input.Name();
@@ -283,19 +284,19 @@ impl<'a> HTMLFormElementHelpers for JSRef<'a, HTMLFormElement> {
                         })
                     }
                 }
-                ElementNodeTypeId(HTMLButtonElementTypeId) => {
+                NodeTypeId::Element(ElementTypeId::HTMLButtonElement) => {
                     // Unimplemented
                     None
                 }
-                ElementNodeTypeId(HTMLSelectElementTypeId) => {
+                NodeTypeId::Element(ElementTypeId::HTMLSelectElement) => {
                     // Unimplemented
                     None
                 }
-                ElementNodeTypeId(HTMLObjectElementTypeId) => {
+                NodeTypeId::Element(ElementTypeId::HTMLObjectElement) => {
                     // Unimplemented
                     None
                 }
-                ElementNodeTypeId(HTMLTextAreaElementTypeId) => {
+                NodeTypeId::Element(ElementTypeId::HTMLTextAreaElement) => {
                     // Unimplemented
                     None
                 }
@@ -352,8 +353,8 @@ pub enum FormSubmitter<'a> {
 impl<'a> FormSubmitter<'a> {
     fn action(&self) -> DOMString {
         match *self {
-            FormElement(form) => form.Action(),
-            InputElement(input_element) => {
+            FormSubmitter::FormElement(form) => form.Action(),
+            FormSubmitter::InputElement(input_element) => {
                 // FIXME(pcwalton): Make this a static atom.
                 input_element.get_form_attribute(&Atom::from_slice("formaction"),
                                                  |i| i.FormAction(),
@@ -364,8 +365,8 @@ impl<'a> FormSubmitter<'a> {
 
     fn enctype(&self) -> FormEncType {
         let attr = match *self {
-            FormElement(form) => form.Enctype(),
-            InputElement(input_element) => {
+            FormSubmitter::FormElement(form) => form.Enctype(),
+            FormSubmitter::InputElement(input_element) => {
                 // FIXME(pcwalton): Make this a static atom.
                 input_element.get_form_attribute(&Atom::from_slice("formenctype"),
                                                  |i| i.FormEnctype(),
@@ -383,8 +384,8 @@ impl<'a> FormSubmitter<'a> {
 
     fn method(&self) -> FormMethod {
         let attr = match *self {
-            FormElement(form) => form.Method(),
-            InputElement(input_element) => {
+            FormSubmitter::FormElement(form) => form.Method(),
+            FormSubmitter::InputElement(input_element) => {
                 // FIXME(pcwalton): Make this a static atom.
                 input_element.get_form_attribute(&Atom::from_slice("formmethod"),
                                                  |i| i.FormMethod(),
@@ -400,8 +401,8 @@ impl<'a> FormSubmitter<'a> {
 
     fn target(&self) -> DOMString {
         match *self {
-            FormElement(form) => form.Target(),
-            InputElement(input_element) => {
+            FormSubmitter::FormElement(form) => form.Target(),
+            FormSubmitter::InputElement(input_element) => {
                 // FIXME(pcwalton): Make this a static atom.
                 input_element.get_form_attribute(&Atom::from_slice("formtarget"),
                                                  |i| i.FormTarget(),
